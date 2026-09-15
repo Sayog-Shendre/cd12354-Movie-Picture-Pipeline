@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 env:
-  REPOSITORY: mp-backend
+  REPOSITORY: backend
   AWS_REGION: us-east-1
 
 jobs:
@@ -75,7 +75,7 @@ jobs:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          aws eks update-kubeconfig --name mp-cluster --region ${{ env.AWS_REGION }}
+          aws eks update-kubeconfig --name cluster --region ${{ env.AWS_REGION }}
           cd starter/backend/k8s
           kustomize edit set image backend-image=$ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG || sed -i "s|image:.*|image: $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG|g" deployment.yaml
           kubectl apply -k . || kubectl apply -f .
