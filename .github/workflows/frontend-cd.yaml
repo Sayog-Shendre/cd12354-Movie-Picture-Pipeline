@@ -64,7 +64,7 @@ jobs:
 
       - name: Configure EKS Context
         run: |
-          aws eks update-kubeconfig --name mp-cluster --region ${{ env.AWS_REGION }}
+          aws eks update-kubeconfig --name cluster --region ${{ env.AWS_REGION }}
 
       - name: Build, tag, and push image to Amazon ECR
         env:
