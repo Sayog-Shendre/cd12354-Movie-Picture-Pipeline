@@ -4,7 +4,7 @@ import axios from 'axios';
 function MovieDetail({ movie }) {
   const [details, setDetails] = useState(null);
   useEffect(() => {
-    axios.get(`/proxy/5000/movies/${movie.id}`).then((response) => {
+    axios.get(`${apiUrl}/movies/${movie.id}`).then((response) => {
       setDetails(response.data);
     });
   }, [movie]);

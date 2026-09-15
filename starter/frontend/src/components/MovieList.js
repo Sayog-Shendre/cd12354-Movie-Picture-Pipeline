@@ -6,7 +6,7 @@ function MovieList({ onMovieClick }) {
   const [movies, setMovies] = useState([]);
 
   useEffect(() => {
-    axios.get(`/proxy/5000/movies`).then((response) => {
+    axios.get(`${apiUrl}/movies`).then((response) => {
       setMovies(response.data.movies);
     });
   }, []);
