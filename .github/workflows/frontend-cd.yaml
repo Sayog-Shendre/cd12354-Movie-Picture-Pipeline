@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 env:
-  REPOSITORY: mp-frontend
+  REPOSITORY: frontend
   AWS_REGION: us-east-1
 
 jobs:
