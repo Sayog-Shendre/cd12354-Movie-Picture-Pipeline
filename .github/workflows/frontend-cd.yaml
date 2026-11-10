@@ -1,16 +1,13 @@
-name: Frontend Continuous Deployment
+name: Frontend CD
 
 on:
   push:
     branches:
       - main
     paths:
-      - "starter/frontend/**"
-      - ".github/workflows/frontend-cd.yaml"
+      - 'starter/frontend/**'
+      - '.github/workflows/frontend-cd.yaml'
   workflow_dispatch:
-
-permissions:
-  contents: read
 
 env:
   AWS_REGION: ap-southeast-2
@@ -25,11 +22,11 @@ jobs:
         working-directory: starter/frontend
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 18
-
+          cache: 'npm'
+          cache-dependency-path: starter/frontend/package-lock.json
       - run: npm ci
       - run: npm run lint
 
@@ -40,75 +37,61 @@ jobs:
         working-directory: starter/frontend
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 18
-
+          cache: 'npm'
+          cache-dependency-path: starter/frontend/package-lock.json
       - run: npm ci
-      - run: npm test -- --watchAll=false
-        env:
+      - env:
           CI: true
+        run: npm test -- --watchAll=false
 
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
     needs: [lint, test]
+    defaults:
+      run:
+        working-directory: starter/frontend
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Configure AWS Credentials
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Discover Backend Service URL
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Discover backend service URL
         run: |
-          aws eks update-kubeconfig --name "$EKS_CLUSTER_NAME" --region "$AWS_REGION"
+          aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
           BACKEND_HOST=$(kubectl get svc backend -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-          echo "REACT_APP_MOVIE_API_URL=http://${BACKEND_HOST}:5000" >> "$GITHUB_ENV"
+          echo "REACT_APP_MOVIE_API_URL=http://${BACKEND_HOST}:5000" >> $GITHUB_ENV
 
-      - id: ecr-login
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build and Push Docker Image
-        uses: docker/build-push-action@v6
-        with:
-          context: starter/frontend
-          push: true
-          build-args: |
-            REACT_APP_MOVIE_API_URL=${{ env.REACT_APP_MOVIE_API_URL }}
-          tags: |
-            ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
-            ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
-
-  deploy:
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Configure kubectl
-        run: aws eks update-kubeconfig --name "$EKS_CLUSTER_NAME" --region "$AWS_REGION"
-
-      - id: ecr-login
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Update image with Kustomize
-        working-directory: starter/frontend/k8s
+      - name: Build, tag, and push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
         run: |
-          kustomize edit set image frontend=${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          docker build \
+            --build-arg REACT_APP_MOVIE_API_URL="${{ env.REACT_APP_MOVIE_API_URL }}" \
+            -t $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG \
+            -t $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest .
+          docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
+          docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest
 
-      - name: Deploy to EKS
-        working-directory: starter/frontend/k8s
+      - name: Deploy to Kubernetes with Kustomize
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
         run: |
+          cd k8s
+          kustomize edit set image frontend=$ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
           kustomize build | kubectl apply -f -
           kubectl rollout status deployment frontend
