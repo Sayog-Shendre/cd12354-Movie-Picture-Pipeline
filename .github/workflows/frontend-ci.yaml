@@ -4,13 +4,14 @@ on:
   pull_request:
     paths:
       - "starter/frontend/**"
+      - ".github/workflows/frontend-ci.yaml"
   push:
     branches:
       - main
     paths:
       - "starter/frontend/**"
+      - ".github/workflows/frontend-ci.yaml"
   workflow_dispatch:
-
 jobs:
   lint:
     runs-on: ubuntu-latest

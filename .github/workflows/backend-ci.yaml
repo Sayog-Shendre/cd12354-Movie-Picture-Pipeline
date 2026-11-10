@@ -4,11 +4,13 @@ on:
   pull_request:
     paths:
       - "starter/backend/**"
+      - ".github/workflows/backend-ci.yaml"
   push:
     branches:
       - main
     paths:
       - "starter/backend/**"
+      - ".github/workflows/backend-ci.yaml"
   workflow_dispatch:
 
 jobs:
