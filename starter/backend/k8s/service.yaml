@@ -6,9 +6,10 @@ metadata:
     app: backend
 spec:
   type: LoadBalancer
+  ports:
+    - name: http
+      port: 5000
+      targetPort: 5000
+      protocol: TCP
   selector:
     app: backend
-  ports:
-    - protocol: TCP
-      port: 80
-      targetPort: 5000
