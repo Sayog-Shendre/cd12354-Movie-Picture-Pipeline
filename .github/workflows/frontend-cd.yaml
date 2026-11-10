@@ -10,8 +10,9 @@ on:
   workflow_dispatch:
 
 env:
-  REPOSITORY: frontend
-  AWS_REGION: us-east-1
+  AWS_REGION: ap-southeast-2
+  EKS_CLUSTER_NAME: cluster
+  ECR_REPOSITORY: frontend
 
 jobs:
   lint:

@@ -9,9 +9,13 @@ on:
       - ".github/workflows/backend-cd.yaml"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 env:
-  REPOSITORY: backend
-  AWS_REGION: us-east-1
+  AWS_REGION: ap-southeast-2
+  EKS_CLUSTER_NAME: cluster
+  ECR_REPOSITORY: backend
 
 jobs:
   lint:
@@ -24,9 +28,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-      - run: python -m pip install pipenv
-      - run: python -m pipenv install --dev
-      - run: python -m pipenv run lint
+      - run: |
+          pip install pipenv flake8
+          pipenv install --dev --system
+      - run: flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
   test:
     runs-on: ubuntu-latest
@@ -38,44 +43,50 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-      - run: python -m pip install pipenv
-      - run: python -m pipenv install --dev
-      - run: python -m pipenv run test
+      - run: |
+          pip install pipenv
+          pipenv install --dev --system
+      - run: pytest
 
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
     needs: [lint, test]
     steps:
       - uses: actions/checkout@v4
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login to Amazon ECR
-        id: login-ecr
+      - id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
+      - uses: docker/build-push-action@v6
+        with:
+          context: starter/backend
+          push: true
+          tags: ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
 
-      - name: Build, tag, and push image to Amazon ECR
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
-        working-directory: starter/backend
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Configure kubectl
+        run: aws eks update-kubeconfig --name "$EKS_CLUSTER_NAME" --region "$AWS_REGION"
+      - name: Install kustomize
         run: |
-          docker build -t $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$REPOSITORY:latest .
-          docker push $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG
-          docker push $ECR_REGISTRY/$REPOSITORY:latest
-
-      - name: Deploy to Kubernetes Cluster
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          aws eks update-kubeconfig --name cluster --region ${{ env.AWS_REGION }}
-          cd starter/backend/k8s
-          kustomize edit set image backend-image=$ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG || sed -i "s|image:.*|image: $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG|g" deployment.yaml
-          kubectl apply -k . || kubectl apply -f .
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/kustomize
+      - id: ecr
+        run: echo "registry=$(aws sts get-caller-identity --query Account --output text).dkr.ecr.$AWS_REGION.amazonaws.com" >> "$GITHUB_OUTPUT"
+      - name: Update image
+        working-directory: starter/backend/k8s
+        run: kustomize edit set image backend=${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+      - name: Deploy
+        working-directory: starter/backend/k8s
+        run: kustomize build | kubectl apply -f -
