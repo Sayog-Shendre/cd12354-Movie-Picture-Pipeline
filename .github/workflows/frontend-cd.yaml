@@ -50,13 +50,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-southeast-2
+          audience: ''
+        env:
+          ACTIONS_ID_TOKEN_REQUEST_URL: ''
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ''
+
       - id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
+
       - uses: docker/build-push-action@v6
         with:
           context: starter/frontend
@@ -69,22 +75,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-southeast-2
+          audience: ''
+        env:
+          ACTIONS_ID_TOKEN_REQUEST_URL: ''
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ''
+
       - name: Configure kubectl
         run: aws eks update-kubeconfig --name "$EKS_CLUSTER_NAME" --region "$AWS_REGION"
+
       - name: Install kustomize
         run: |
           curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
           sudo mv kustomize /usr/local/bin/kustomize
+
       - id: ecr
         run: echo "registry=038084590916.dkr.ecr.$AWS_REGION.amazonaws.com" >> "$GITHUB_OUTPUT"
+
       - name: Update image
         working-directory: starter/frontend/k8s
         run: kustomize edit set image frontend=${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+
       - name: Deploy
         working-directory: starter/frontend/k8s
         run: kustomize build | kubectl apply -f -
