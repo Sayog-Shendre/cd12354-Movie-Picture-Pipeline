@@ -3,13 +3,13 @@ name: Backend Continuous Integration
 on:
   pull_request:
     paths:
-      - "starter/backend/**"
+      - "backend/**"
       - ".github/workflows/backend-ci.yaml"
   push:
     branches:
       - main
     paths:
-      - "starter/backend/**"
+      - "backend/**"
       - ".github/workflows/backend-ci.yaml"
   workflow_dispatch:
 
@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: starter/backend
+        working-directory: backend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: starter/backend
+        working-directory: backend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
